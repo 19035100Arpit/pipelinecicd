@@ -1,0 +1,40 @@
+name: Deploy Flask App to AWS EC2
+
+on:
+  push:
+    branches:
+      - main  # Change this if your branch name is different
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up SSH and Deploy to AWS EC2
+        env:
+          PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+          HOST: ${{ secrets.EC2_HOST }}
+          USER: ${{ secrets.EC2_USER }}
+        run: |
+          # Create SSH Key file
+          echo "$PRIVATE_KEY" > private_key.pem
+          chmod 600 private_key.pem
+
+          # Connect to EC2 and run deployment commands
+          ssh -o StrictHostKeyChecking=no -i private_key.pem $USER@$HOST << 'EOF'
+            cd flask_classification || git clone https://github.com/machinelearningplus/flask_classification.git && cd flask_classification
+            git pull origin main  # Pull latest changes
+            sudo apt update && sudo apt install python3-pip -y  # Update system
+            pip3 install -r requirements.txt  # Install dependencies
+            
+            # Restart Flask App with Gunicorn
+            pkill gunicorn || true  # Stop existing process if running
+            nohup gunicorn --bind 0.0.0.0:5000 app:app > gunicorn.log 2>&1 &
+            exit
+          EOF
+
+      - name: Cleanup
+        run: rm -f private_key.pem
